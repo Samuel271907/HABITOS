@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HabitFlow Elite - Audio & Streaks</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-soft: #e0e7ff;
+            --accent: #f59e0b;
+            --bg: #f9fafb;
+            --card: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --success: #10b981;
+            --danger: #ef4444;
+            --border: #f3f4f6;
+            --radius: 20px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body { background-color: var(--bg); color: var(--text-main); padding: 20px; min-height: 100vh; }
+
+        .app-container { max-width: 500px; margin: 0 auto; }
+
+        header { margin-bottom: 2rem; text-align: center; }
+        h1 { font-size: 2.2rem; color: var(--primary); font-weight: 800; letter-spacing: -1px; }
+
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            transition: transform 0.2s;
+        }
+
+        /* Formulario Minimalista */
+        .add-box { display: flex; flex-direction: column; gap: 12px; }
+        input {
+            border: 2px solid var(--border);
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        input:focus { border-color: var(--primary); }
+        
+        .btn-main {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Estilo de Hábito */
+        .habit-item { position: relative; border-left: 6px solid var(--border); }
+        .habit-item.completed-border { border-left-color: var(--success); }
+
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .habit-name { font-weight: 700; font-size: 1.1rem; }
+        .streak-fire { font-size: 0.9rem; font-weight: 800; color: var(--accent); background: #fff7ed; padding: 4px 10px; border-radius: 8px; }
+
+        .progress-rail { height: 6px; background: var(--border); border-radius: 10px; margin: 10px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--success)); border-radius: 10px; transition: width 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; }
+        
+        .check-btn {
+            width: 50px; height: 50px; border-radius: 15px; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .btn-off { background: var(--primary-soft); color: var(--primary); }
+        .btn-on { background: var(--success); color: white; transform: scale(1.05); box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4); }
+
+        .trash-btn { background: none; border: none; color: #d1d5db; cursor: pointer; transition: color 0.2s; }
+        .trash-btn:hover { color: var(--danger); }
+
+        .date-selector { text-align: center; margin-bottom: 20px; }
+        .date-selector input { font-weight: bold; color: var(--primary); border: none; background: none; cursor: pointer; }
+
+        /* Animación */
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        .pop-animation { animation: pop 0.3s ease-out; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <h1>HabitFlow<span>+</span></h1>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">Tu disciplina suena bien.</p>
+    </header>
+
+    <div class="card add-box">
+        <input type="text" id="hName" placeholder="Nuevo hábito (ej. Leer)">
+        <button class="btn-main" onclick="createNew()">Añadir Hábito</button>
+    </div>
+
+    <div class="date-selector">
+        <input type="date" id="globalDate">
+    </div>
+
+    <div id="list"></div>
+</div>
+
+<script>
+    let habits = JSON.parse(localStorage.getItem('habitflow_v3')) || [];
+    const dateInput = document.getElementById('globalDate');
+    dateInput.valueAsDate = new Date();
+
+    // --- SINTETIZADOR DE SONIDO (Web Audio API) ---
+    function playSuccessSound() {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(500, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.2);
+    }
+
+    function save() {
+        localStorage.setItem('habitflow_v3', JSON.stringify(habits));
+        render();
+    }
+
+    function createNew() {
+        const val = document.getElementById('hName').value.trim();
+        if(!val) return;
+        habits.push({ id: Date.now(), name: val, logs: [] });
+        document.getElementById('hName').value = '';
+        save();
+    }
+
+    function toggle(id) {
+        const h = habits.find(x => x.id === id);
+        const d = dateInput.value;
+        const idx = h.logs.indexOf(d);
+
+        if(idx > -1) {
+            h.logs.splice(idx, 1);
+        } else {
+            h.logs.push(d);
+            playSuccessSound(); // ¡Suena aquí!
+        }
+        save();
+    }
+
+    function remove(id) {
+        if(confirm('¿Eliminar hábito?')) {
+            habits = habits.filter(x => x.id !== id);
+            save();
+        }
+    }
+
+    function getStreak(logs) {
+        if(!logs.length) return 0;
+        let s = [...logs].sort((a,b) => new Date(b) - new Date(a));
+        let count = 0;
+        let check = new Date();
+        check.setHours(0,0,0,0);
+
+        // Si el último no es hoy ni ayer, racha 0
+        const last = new Date(s[0]); last.setHours(0,0,0,0);
+        if ((check - last) / 86400000 > 1) return 0;
+
+        let currentCheck = last;
+        for(let i=0; i<s.length; i++) {
+            let d = new Date(s[i]); d.setHours(0,0,0,0);
+            if(i > 0) {
+                let prev = new Date(s[i-1]); prev.setDate(prev.getDate()-1); prev.setHours(0,0,0,0);
+                if(d.getTime() !== prev.getTime()) break;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    function render() {
+        const list = document.getElementById('list');
+        const selDate = dateInput.value;
+
+        list.innerHTML = habits.map(h => {
+            const done = h.logs.includes(selDate);
+            const streak = getStreak(h.logs);
+            const perc = Math.min(100, (h.logs.length / 21) * 100); // Meta 21 días
+
+            return `
+                <div class="card habit-item ${done ? 'completed-border' : ''}">
+                    <div class="header-row">
+                        <span class="habit-name">${h.name}</span>
+                        <span class="streak-fire">🔥 ${streak}</span>
+                    </div>
+
+                    <div class="progress-rail">
+                        <div class="progress-fill" style="width: ${perc}%"></div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="check-btn ${done ? 'btn-on pop-animation' : 'btn-off'}" onclick="toggle(${h.id})">
+                            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg>
+                        </button>
+                        
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-align: right;">
+                            Meta 21 días: ${Math.round(perc)}% <br>
+                            <button class="trash-btn" onclick="remove(${h.id})" style="margin-top:5px">Eliminar</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    dateInput.onchange = render;
+    render();
+</script>
+
+</body>
+</html>
